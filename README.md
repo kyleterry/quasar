@@ -12,7 +12,7 @@ package main
 
 import (
 	"fmt"
-	"quasar"
+	"github.com/kyleterry/quasar"
 	"flag"
 	"os"
 )

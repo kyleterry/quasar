@@ -1,29 +1,40 @@
 package quasar
 
-type Service struct {
-	chains map[string]FilterChain
-}
-
 type Data struct {
+	Target      string
+	Command     string
+	Mask        string
+	Direct      bool
+	Nick        string
+	Host        string
+	FullMessage string
+	User        string
+	FromChannel bool
+	Connection  string
+	Payload     string
+	Meta        Meta
 }
 
-type Match struct {
+type Meta struct {
+	Name    string
+	Version string
+}
+
+type ParsedMatch struct {
 }
 
 type FilterChain struct {
-	Patterns []string
+	Filters    []string
 	DirectOnly bool
-	Handler Handler
+	Handler    Handler
 }
 
-type Handler interface {
-	Run(service *Service, data Data, match Match)
+type Handler func(ParsedMatch, Data)
+
+func AddChain(fc FilterChain) {
+
 }
 
-func (s *Service) AddFilterChain(name string, chain FilterChain) {
+func Send(message string, data Data) {
 
-} 
-
-func (s *Service) Run() int {
-	return 0
 }

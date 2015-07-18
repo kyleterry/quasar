@@ -1,6 +1,17 @@
 package quasar
 
-type Data struct {
+type Service struct {
+	Name        string
+	UUID        string
+	Description string
+	HelpText    string
+
+	defaultHandler  FilterChain
+	messagesSent    int
+	messagesMatched int
+}
+
+type Payload struct {
 	Target      string
 	Command     string
 	Mask        string
@@ -29,12 +40,32 @@ type FilterChain struct {
 	Handler    Handler
 }
 
-type Handler func(ParsedMatch, Data)
+type Handler func(ParsedMatch, Payload)
 
-func AddChain(fc FilterChain) {
+func (s *Service) Send(message string, payload Payload) error {
+	return nil
+}
+
+func NewServiceFromConfig(config Config) *Service {
+	return NewService(config.Name, config.UUID)
+}
+
+func NewService(name, uuid string) *Service {
+	return &Service{
+		Name: name,
+		UUID: uuid,
+	}
+}
+
+func (s *Service) AddChain(chain FilterChain) {
 
 }
 
-func Send(message string, data Data) {
+func (s *Service) AddDefaultHandler(chain FilterChain) {
 
+}
+
+// Runs forever or until a signal stops the program
+func (s *Service) Run() error {
+	return nil
 }

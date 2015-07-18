@@ -7,11 +7,16 @@ type Config struct {
 	Description    string `json:"description"`
 	ServiceChannel string `json:"service_channel"`
 	RobotChannel   string `json:"robot_channel"`
+	RedisConfig    RedisConfig
 }
 
-type RedisConf struct {
+type RedisConfig struct {
 	Host     string `json:"host"`
-	Port     int `json:"port"`
+	Port     int    `json:"port"`
 	Password string `json:"password"`
-	DB       int `json:"db"`
+	DB       int    `json:"db"`
+}
+
+func GetConfig() *Config {
+	return &Config{}
 }

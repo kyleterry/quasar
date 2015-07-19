@@ -7,7 +7,8 @@ type Config struct {
 	Description    string `json:"description"`
 	ServiceChannel string `json:"service_channel"`
 	RobotChannel   string `json:"robot_channel"`
-	RedisConfig    RedisConfig
+	TenyksChannel  string `json:"tenyks_channel"`
+	Redis          RedisConfig
 }
 
 type RedisConfig struct {

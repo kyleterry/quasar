@@ -2,7 +2,6 @@ package quasar
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -47,7 +46,6 @@ type HandlerFunc func(Result, Message)
 
 func (s *Service) Send(line string, message Message) error {
 	message.Payload = line
-	fmt.Printf("%#v\n", message)
 	j, err := json.Marshal(message)
 	if err != nil {
 		return err

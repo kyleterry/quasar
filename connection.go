@@ -4,52 +4,72 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/garyburd/redigo/redis"
+	zmq "github.com/pebbe/zmq4"
 )
 
+type pubsub struct {
+	ctx      *zmq.Context
+	sender   *zmq.Socket
+	receiver *zmq.Socket
+}
+
 type Connection struct {
-	r       redis.Conn
-	in      <-chan []byte
+	in      <-chan string
 	out     chan<- string
-	pubsub  redis.PubSubConn
+	pubsub  *pubsub
 	service *Service
-	config  Config
+	config  *Config
 	control chan interface{}
 }
 
-func NewConn(conf Config, service *Service) *Connection {
-	return &Connection{
+func NewConn(conf *Config, service *Service) (*Connection, error) {
+	conn := &Connection{
 		config:  conf,
 		service: service,
+		pubsub:  &pubsub{},
 	}
+	ctx, err := zmq.NewContext()
+	if err != nil {
+		return nil, err
+	}
+	sender, err := ctx.NewSocket(zmq.PUB)
+	if err != nil {
+		return nil, err
+	}
+	receiver, err := ctx.NewSocket(zmq.SUB)
+	if err != nil {
+		return nil, err
+	}
+	receiver.SetSubscribe("")
+
+	conn.pubsub.ctx = ctx
+	conn.pubsub.sender = sender
+	conn.pubsub.receiver = receiver
+
+	return conn, nil
 }
 
-func (c *Connection) Start() error {
+func (c *Connection) start() error {
 	c.control = make(chan interface{})
-	r, err := c.DialRedis()
+	err := c.pubsub.sender.Connect(c.config.Service.SenderBind)
 	if err != nil {
 		return err
 	}
-	c.r = r
-	c.pubsub = redis.PubSubConn{c.r}
+	err = c.pubsub.receiver.Connect(c.config.Service.ReceiverBind)
+	if err != nil {
+		return err
+	}
 	c.in = c.recv()
 	c.out = c.send()
 	return nil
 }
 
-func (c *Connection) Shutdown() {
+func (c *Connection) close() {
 	close(c.control)
 	close(c.out)
-	c.pubsub.Close()
-}
-
-func (c *Connection) DialRedis() (redis.Conn, error) {
-	redisAddr := fmt.Sprintf("%s:%d", c.config.Redis.Host, c.config.Redis.Port)
-	r, err := redis.Dial("tcp", redisAddr)
-	if err != nil {
-		return nil, err
-	}
-	return r, nil
+	c.pubsub.sender.Close()
+	c.pubsub.receiver.Close()
+	c.pubsub.ctx.Term()
 }
 
 func (c *Connection) send() chan<- string {
@@ -58,7 +78,7 @@ func (c *Connection) send() chan<- string {
 		for {
 			select {
 			case msg := <-chn:
-				c.publish(c.config.TenyksChannel, msg)
+				c.publish(msg)
 			case <-c.control:
 				return
 			}
@@ -67,24 +87,25 @@ func (c *Connection) send() chan<- string {
 	return chn
 }
 
-func (c *Connection) publish(channel, msg string) {
-	r, err := c.DialRedis()
+func (c *Connection) publish(msg string) {
+	_, err := c.pubsub.sender.SendMessage(msg)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer r.Close()
-	r.Do("PUBLISH", channel, msg)
 }
 
-func (c *Connection) recv() <-chan []byte {
-	chn := make(chan []byte, 1000)
+func (c *Connection) recv() <-chan string {
+	chn := make(chan string, 1000)
 	go func() {
-		c.pubsub.Subscribe(c.config.ServiceChannel)
 		for {
 			for {
-				switch msg := c.pubsub.Receive().(type) {
-				case redis.Message:
-					chn <- msg.Data
+				msgs, err := c.pubsub.receiver.RecvMessage(0)
+				if err != nil {
+					fmt.Println(err)
+					continue
+				}
+				for _, msg := range msgs {
+					chn <- msg
 				}
 			}
 		}

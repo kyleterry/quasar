@@ -1,11 +1,12 @@
 package quasar
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
-
-	"github.com/garyburd/redigo/redis"
+	"syscall"
 )
 
 type Service struct {
@@ -13,73 +14,95 @@ type Service struct {
 	UUID        string
 	Description string
 	HelpText    string
-	Config      Config
+	Config      *Config
 
-	defaultHandler FilterChain
-	handlers       []FilterChain
+	defaultHandler MsgHandler
+	handlers       []MsgHandler
 	conn           *Connection
 }
 
-type Message struct {
-	Target      string
-	Command     string
-	Mask        string
-	Direct      bool
-	Nick        string
-	Host        string
-	FullMessage string
-	User        string
-	FromChannel bool
-	Connection  string
-	Payload     string
-	Meta        Meta
+// Matcher is a type that has a match method that can receive a Message and try to match it
+// against a set of rules.
+// If no match is found, then you should return nil, ErrNoMatch
+type Matcher interface {
+	Match(Message) (Result, error)
 }
 
-type Meta struct {
-	Name    string
-	Version string
+type MatcherFunc func(Message) (Result, error)
+
+func (fn MatcherFunc) Match(msg Message) (Result, error) {
+	return fn(msg)
 }
 
-type ParsedMatch struct {
+type Result map[string]string
+
+type MsgHandler struct {
+	MatcherFunc Matcher
+	DirectOnly  bool
+	PrivateOnly bool
+	HandlerFunc HandlerFunc
 }
 
-type FilterChain struct {
-	Filters    []string
-	DirectOnly bool
-	Handler    Handler
-}
-
-type Handler func(ParsedMatch, Message)
+type HandlerFunc func(Result, Message)
 
 func (s *Service) Send(line string, message Message) error {
+	message.Payload = line
+	fmt.Printf("%#v\n", message)
+	j, err := json.Marshal(message)
+	if err != nil {
+		return err
+	}
+	s.publish(string(j))
 	return nil
 }
 
-func NewServiceFromConfig(config Config) *Service {
-	return NewService(config.Name, config.UUID)
+func (s *Service) publish(msg string) {
+	s.conn.out <- msg
 }
 
-func NewService(name, uuid string) *Service {
-	return &Service{
-		Name: name,
-		UUID: uuid,
+var NoopHandler = MsgHandler{HandlerFunc: func(r Result, m Message) {}}
+
+func NewService(config *Config) *Service {
+	s := &Service{
+		Config: config,
 	}
+	// Add noop handler for default
+	s.DefaultHandle(NoopHandler)
+
+	return s
 }
 
-func (s *Service) AddChain(chain FilterChain) {
-	s.handlers = append(s.handlers, chain)
+func (s *Service) Handle(handler MsgHandler) {
+	// Choose one, sucker
+	if handler.DirectOnly && handler.PrivateOnly {
+		log.Panicln("Cannot have both DirectOnly and PrivateOnly set to true")
+	}
+	s.handlers = append(s.handlers, handler)
 }
 
-func (s *Service) AddDefaultHandler(chain FilterChain) {
-	s.defaultHandler = chain
+func (s *Service) DefaultHandle(handler MsgHandler) {
+	s.defaultHandler = handler
 }
 
-func (s *Service) findMatch(msg redis.Message) {
-
+func (s *Service) findMatch(msg Message) {
+	for _, mh := range s.handlers {
+		res, err := mh.MatcherFunc.Match(msg)
+		if IsNoMatch(err) {
+			continue
+		} else {
+			mh.HandlerFunc(res, msg)
+			return
+		}
+	}
+	s.defaultHandler.HandlerFunc(nil, msg)
 }
 
-func (s *Service) dispatch(msg []byte) {
-
+func (s *Service) dispatch(rawmsg string) {
+	msg := Message{}
+	if err := json.Unmarshal([]byte(rawmsg), &msg); err != nil {
+		// ?
+	}
+	s.findMatch(msg)
 }
 
 func (s *Service) deligator() {
@@ -93,22 +116,35 @@ func (s *Service) deligator() {
 
 // Runs forever or until a signal stops the program
 func (s *Service) Run() error {
-	conn := NewConn(s.Config, s)
-	s.conn = conn
-	err := conn.Start()
+	sigch := make(chan os.Signal, 1)
+	go func() {
+		<-sigch
+		s.Cleanup()
+	}()
+
+	conn, err := NewConn(s.Config, s)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
+	}
+	s.conn = conn
+	err = conn.start()
+	if err != nil {
+		panic(err)
 	}
 
 	go s.deligator()
 
-	sigChn := make(chan os.Signal, 1)
-	signal.Notify(sigChn, os.Interrupt)
+	sigchn := make(chan os.Signal, 1)
+	signal.Notify(sigchn, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	for {
 		select {
-		case <-sigChn:
-			conn.Shutdown()
+		case <-sigchn:
+			conn.close()
 		}
 	}
 	return nil
+}
+
+func (s *Service) Cleanup() {
+	s.conn.close()
 }

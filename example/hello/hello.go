@@ -13,42 +13,38 @@ how it should be used`
 
 const Description = "Says hello and ping back to a user"
 
+func hello(msg quasar.Message) (quasar.Result, error) {
+	res := make(quasar.Result)
+	if msg.Payload != "hello" {
+		return nil, quasar.ErrNoMatch
+	}
+	return res, nil
+}
+
 func main() {
 	config := quasar.GetConfig()
-	service := quasar.NewService(config.Name, config.UUID)
+	service := quasar.NewService(config)
 	service.HelpText = HelpText
 	service.Description = Description
-	service.AddChain(
-		quasar.FilterChain{
-			Filters:    []string{"^hello$"},
-			DirectOnly: true,
-			Handler: func(match quasar.ParsedMatch, payload quasar.Payload) {
+	service.Handle(
+		quasar.MsgHandler{
+			MatcherFunc: quasar.MatcherFunc(hello),
+			DirectOnly:  true,
+			HandlerFunc: func(match quasar.Result, msg quasar.Message) {
 				log.Print("Hello handler called")
-				if err := service.Send(fmt.Sprintf("Hello, %s!", payload.Nick), payload); err != nil {
+				if err := service.Send(fmt.Sprintf("Hello, %s!", msg.Nick), msg); err != nil {
 					log.Print(err)
 				}
 			},
 		},
 	)
 
-	service.AddChain(
-		quasar.FilterChain{
-			Filters:    []string{"^ping$"},
+	service.DefaultHandle(
+		quasar.MsgHandler{
 			DirectOnly: true,
-			Handler: func(match quasar.ParsedMatch, payload quasar.Payload) {
-				log.Print("Ping handler called")
-				service.Send(fmt.Sprintf("Pong, %s!", payload.Nick), payload)
-			},
-		},
-	)
-
-	service.AddDefaultHandler(
-		quasar.FilterChain{
-			Filters:    []string{},
-			DirectOnly: true,
-			Handler: func(match quasar.ParsedMatch, payload quasar.Payload) {
+			HandlerFunc: func(match quasar.Result, msg quasar.Message) {
 				log.Print("Default handler called")
-				service.Send(fmt.Sprintf("you rang, %s?", payload.Nick), payload)
+				service.Send(fmt.Sprintf("you rang, %s?", msg.Nick), msg)
 			},
 		},
 	)

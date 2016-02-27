@@ -33,16 +33,27 @@ func (fn MatcherFunc) Match(msg Message) (Result, error) {
 	return fn(msg)
 }
 
-type Result map[string]string
-
-type MsgHandler struct {
-	MatcherFunc Matcher
-	DirectOnly  bool
-	PrivateOnly bool
-	HandlerFunc HandlerFunc
+// Handler is a type that has a Handle method that takes a Result and Message as arguments.
+// What you do with these is up to you. This is a function that will be triggered if it's
+// matcher returns a valid match.
+type Handler interface {
+	HandleMatch(Result, Message)
 }
 
 type HandlerFunc func(Result, Message)
+
+func (fn HandlerFunc) HandleMatch(r Result, m Message) {
+	fn(r, m)
+}
+
+type Result map[string]string
+
+type MsgHandler struct {
+	MatcherFunc  Matcher
+	DirectOnly   bool
+	PrivateOnly  bool
+	MatchHandler Handler
+}
 
 func (s *Service) Send(line string, message Message) error {
 	message.Payload = line
@@ -58,7 +69,7 @@ func (s *Service) publish(msg string) {
 	s.conn.out <- msg
 }
 
-var NoopHandler = MsgHandler{HandlerFunc: func(r Result, m Message) {}}
+var NoopHandler = MsgHandler{MatchHandler: HandlerFunc(func(r Result, m Message) {})}
 
 func NewService(config *Config) *Service {
 	s := &Service{
@@ -88,11 +99,11 @@ func (s *Service) findMatch(msg Message) {
 		if IsNoMatch(err) {
 			continue
 		} else {
-			mh.HandlerFunc(res, msg)
+			mh.MatchHandler.HandleMatch(res, msg)
 			return
 		}
 	}
-	s.defaultHandler.HandlerFunc(nil, msg)
+	s.defaultHandler.MatchHandler.HandleMatch(nil, msg)
 }
 
 func (s *Service) dispatch(rawmsg string) {

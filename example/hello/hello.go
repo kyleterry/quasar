@@ -13,7 +13,7 @@ how it should be used`
 
 const Description = "Says hello and ping back to a user"
 
-func hello(msg quasar.Message) (quasar.Result, error) {
+func matchHello(msg quasar.Message) (quasar.Result, error) {
 	res := make(quasar.Result)
 	if msg.Payload != "hello" {
 		return nil, quasar.ErrNoMatch
@@ -28,14 +28,14 @@ func main() {
 	service.Description = Description
 	service.Handle(
 		quasar.MsgHandler{
-			MatcherFunc: quasar.MatcherFunc(hello),
+			MatcherFunc: quasar.MatcherFunc(matchHello),
 			DirectOnly:  true,
-			HandlerFunc: func(match quasar.Result, msg quasar.Message) {
+			MatchHandler: HandlerFunc(func(match quasar.Result, msg quasar.Message) {
 				log.Print("Hello handler called")
 				if err := service.Send(fmt.Sprintf("Hello, %s!", msg.Nick), msg); err != nil {
 					log.Print(err)
 				}
-			},
+			}),
 		},
 	)
 

@@ -1,5 +1,10 @@
 package quasar
 
+import (
+	"encoding/json"
+	"io/ioutil"
+)
+
 type Config struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
@@ -12,13 +17,16 @@ type ServiceConfig struct {
 	ReceiverBind string `json:"receiver_bind"`
 }
 
-func GetConfig() *Config {
-	return &Config{
-		Name:    "hello",
-		Version: "1.0",
-		Service: ServiceConfig{
-			SenderBind:   "tcp://localhost:61124",
-			ReceiverBind: "tcp://localhost:61123",
-		},
+func NewConfigFromJSONFile(path string) (*Config, error) {
+	input, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
 	}
+
+	conf := &Config{}
+	if err := json.Unmarshal(input, conf); err != nil {
+		return nil, err
+	}
+
+	return conf, nil
 }

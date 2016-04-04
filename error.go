@@ -2,9 +2,7 @@ package quasar
 
 import "errors"
 
-var (
-	ErrNoMatch = errors.New("message payload did not match")
-)
+var ErrNoMatch = errors.New("message payload did not match")
 
 func IsNoMatch(err error) bool {
 	if err == nil {

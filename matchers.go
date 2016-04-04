@@ -19,7 +19,13 @@ func NewRegexMatcher(expressions ...string) RegexMatcher {
 func (r RegexMatcher) Match(msg Message) (Result, error) {
 	res := make(Result)
 	for _, expression := range r.expressions {
-		// match here
+		match := expression.FindStringSubmatch(msg.Payload)
+		if len(match) < 1 {
+			continue
+		}
+		for i, name := range expression.SubexpNames() {
+			res[name] = match[i]
+		}
 		return res, nil
 	}
 	return nil, ErrNoMatch

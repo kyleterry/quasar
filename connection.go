@@ -17,16 +17,14 @@ type Connection struct {
 	in      <-chan string
 	out     chan<- string
 	pubsub  *pubsub
-	service *Service
 	config  *Config
 	control chan interface{}
 }
 
-func NewConn(conf *Config, service *Service) (*Connection, error) {
+func NewConn(conf *Config) (*Connection, error) {
 	conn := &Connection{
-		config:  conf,
-		service: service,
-		pubsub:  &pubsub{},
+		config: conf,
+		pubsub: &pubsub{},
 	}
 	ctx, err := zmq.NewContext()
 	if err != nil {
@@ -51,11 +49,11 @@ func NewConn(conf *Config, service *Service) (*Connection, error) {
 
 func (c *Connection) start() error {
 	c.control = make(chan interface{})
-	err := c.pubsub.sender.Connect(c.config.Service.SenderBind)
+	err := c.pubsub.sender.Connect(c.config.Service.SendAddr)
 	if err != nil {
 		return err
 	}
-	err = c.pubsub.receiver.Connect(c.config.Service.ReceiverBind)
+	err = c.pubsub.receiver.Connect(c.config.Service.RecvAddr)
 	if err != nil {
 		return err
 	}

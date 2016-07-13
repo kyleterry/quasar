@@ -8,6 +8,11 @@ import (
 	"syscall"
 )
 
+const (
+	DefaultSend = "tcp://localhost:61124"
+	DefaultRecv = "tcp://localhost:61123"
+)
+
 type Service struct {
 	Name        string
 	UUID        string
@@ -131,7 +136,15 @@ func (s *Service) Run() error {
 		s.Cleanup()
 	}()
 
-	conn, err := NewConn(s.Config, s)
+	if s.Config.Service.SendAddr == "" {
+		s.Config.Service.SendAddr = DefaultSend
+	}
+
+	if s.Config.Service.RecvAddr == "" {
+		s.Config.Service.RecvAddr = DefaultRecv
+	}
+
+	conn, err := NewConn(s.Config)
 	if err != nil {
 		panic(err)
 	}

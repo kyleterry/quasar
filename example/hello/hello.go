@@ -28,8 +28,8 @@ func main() {
 		Name:    "hello",
 		Version: "1.0",
 		Service: quasar.ServiceConfig{
-			SenderBind:   "tcp://localhost:61124",
-			ReceiverBind: "tcp://localhost:61123",
+			SendAddr: "tcp://localhost:61124",
+			RecvAddr: "tcp://localhost:61123",
 		},
 	}
 	service := quasar.NewService(config)

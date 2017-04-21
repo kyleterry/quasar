@@ -13,12 +13,12 @@ how it should be used`
 
 const Description = "Says hello and ping back to a user"
 
-func matchHello(msg quasar.Message) (quasar.Result, error) {
+func matchHello(msg quasar.Message) quasar.Result {
 	res := make(quasar.Result)
 	if msg.Payload != "hello" {
-		return nil, quasar.ErrNoMatch
+		return nil
 	}
-	return res, nil
+	return res
 }
 
 var matchName = quasar.NewRegexMatcher("^my name is (?P<name>(.*))$")
@@ -35,43 +35,43 @@ func main() {
 	service := quasar.NewService(config)
 	service.HelpText = HelpText
 	service.Description = Description
+
 	service.Handle(
 		quasar.MsgHandler{
 			MatcherFunc: quasar.MatcherFunc(matchHello),
 			DirectOnly:  true,
-			MatchHandler: quasar.HandlerFunc(func(match quasar.Result, msg quasar.Message) {
+			MatchHandler: quasar.HandlerFunc(func(match quasar.Result, msg quasar.Message, com quasar.Communication) {
 				log.Print("Hello handler called")
-				if err := service.Send(fmt.Sprintf("Hello, %s!", msg.Nick), msg); err != nil {
-					log.Print(err)
-				}
+				com.Send(fmt.Sprintf("Hello, %s!", msg.Nick), msg)
 			}),
 		},
 	)
 
 	service.Handle(
 		quasar.MsgHandler{
-
 			MatcherFunc: matchName,
 			DirectOnly:  true,
-			MatchHandler: quasar.HandlerFunc(func(match quasar.Result, msg quasar.Message) {
+			MatchHandler: quasar.HandlerFunc(func(match quasar.Result, msg quasar.Message, com quasar.Communication) {
 				log.Print("Name handler called")
 				if name, ok := match["name"]; ok {
-					if err := service.Send(fmt.Sprintf("hello, %s!", name), msg); err != nil {
-						log.Print(err)
-					}
+					com.Send(fmt.Sprintf("hello, %s!", name), msg)
 				}
 			}),
-		})
+		},
+	)
 
 	service.DefaultHandle(
 		quasar.MsgHandler{
 			DirectOnly: true,
-			MatchHandler: quasar.HandlerFunc(func(match quasar.Result, msg quasar.Message) {
+			MatchHandler: quasar.PrivmsgMiddlware(quasar.HandlerFunc(func(match quasar.Result, msg quasar.Message, com quasar.Communication) {
+				fmt.Println(msg)
 				log.Print("Default handler called")
-				service.Send(fmt.Sprintf("you rang, %s?", msg.Nick), msg)
-			}),
-		})
+				com.Send(fmt.Sprintf("you rang, %s?", msg.Nick), msg)
+			})),
+		},
+	)
 
+	log.Print("Starting hello service")
 	if err := service.Run(); err != nil {
 		log.Fatal(err)
 	}

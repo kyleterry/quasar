@@ -1,30 +1,29 @@
 package quasar
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
 
 func TestRegexMatcherCanMatch(t *testing.T) {
 	matcher := NewRegexMatcher("^(?i)(hi|hello|sup|hey), I'm (?P<name>(.*))$")
 	msg := Message{Payload: "hey, I'm Kyle"}
 
-	match, err := matcher.Match(msg)
-	if err != nil {
-		t.Error("expected: nil, got: ", err)
-	}
+	match := matcher.Match(msg)
+	assert.NotNil(t, match)
 
-	if name, ok := match["name"]; !ok || name != "Kyle" {
-		t.Error("expected: Kyle, got:", name)
-	}
+	assert.Contains(t, match, "name")
+	assert.Equal(t, match["name"], "Kyle")
 }
 
-func TestRegexMatcherWillReturnErrorForNoMatch(t *testing.T) {
+func TestRegexMatcherWillReturnNilForNoMatch(t *testing.T) {
 	matcher := NewRegexMatcher("^(?i)(hi|hello|sup|hey), I'm (?P<name>(.*))$")
 	msg := Message{Payload: "nonsense"}
 
-	_, err := matcher.Match(msg)
+	match := matcher.Match(msg)
 
-	if err != ErrNoMatch {
-		t.Error("expected: ErrNoMatch, got:", err)
-	}
+	assert.Nil(t, match)
 }
 
 func TestRegexMatcherCanFindOneOutOfMany(t *testing.T) {
@@ -33,12 +32,9 @@ func TestRegexMatcherCanFindOneOutOfMany(t *testing.T) {
 		"^testing (?P<thing>(.*))$")
 	msg := Message{Payload: "testing something"}
 
-	match, err := matcher.Match(msg)
-	if err != nil {
-		t.Error("expected: nil, got: ", err)
-	}
+	match := matcher.Match(msg)
+	assert.NotNil(t, match)
 
-	if name, ok := match["thing"]; !ok || name != "something" {
-		t.Error("expected: Kyle, got:", name)
-	}
+	assert.Contains(t, match, "thing")
+	assert.Equal(t, match["thing"], "something")
 }

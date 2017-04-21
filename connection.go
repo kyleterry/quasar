@@ -21,7 +21,7 @@ type Connection struct {
 	control chan interface{}
 }
 
-func NewConn(conf *Config) (*Connection, error) {
+func NewConnection(conf *Config) (*Connection, error) {
 	conn := &Connection{
 		config: conf,
 		pubsub: &pubsub{},

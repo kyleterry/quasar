@@ -6,13 +6,21 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/pkg/errors"
 )
 
 const (
+	// DefaultSend is the default tcp address for sending data to the server.
 	DefaultSend = "tcp://localhost:61124"
+	// DefaultRecv is the default tcp address for recieving data from the server.
 	DefaultRecv = "tcp://localhost:61123"
 )
 
+// Service is the state of the service.
+// It holds the handlers and matchers and helps relay
+// messages to the right handler when they come in from
+// the Tenyks server.
 type Service struct {
 	Name        string
 	UUID        string
@@ -23,32 +31,34 @@ type Service struct {
 	defaultHandler MsgHandler
 	handlers       []MsgHandler
 	conn           *Connection
+	responseCh     chan Message
 }
 
-// Matcher is a type that has a match method that can receive a Message and try to match it
-// against a set of rules.
-// If no match is found, then you should return nil, ErrNoMatch
+// Matcher is an interface that has a match method that receives a
+// Message and tries to match it against a set of rules.
+// If no match is found, then you should return nil.
 type Matcher interface {
-	Match(Message) (Result, error)
+	Match(Message) Result
 }
 
-type MatcherFunc func(Message) (Result, error)
+// MatcherFunc registers the wrapped function as a Matcher.
+type MatcherFunc func(Message) Result
 
-func (fn MatcherFunc) Match(msg Message) (Result, error) {
+func (fn MatcherFunc) Match(msg Message) Result {
 	return fn(msg)
 }
 
-// Handler is a type that has a Handle method that takes a Result and Message as arguments.
+// Handler is an interface that has a Handle method that takes a Result and Message as arguments.
 // What you do with these is up to you. This is a function that will be triggered if it's
 // matcher returns a valid match.
 type Handler interface {
-	HandleMatch(Result, Message)
+	HandleMatch(Result, Message, Communication)
 }
 
-type HandlerFunc func(Result, Message)
+type HandlerFunc func(Result, Message, Communication)
 
-func (fn HandlerFunc) HandleMatch(r Result, m Message) {
-	fn(r, m)
+func (fn HandlerFunc) HandleMatch(r Result, m Message, c Communication) {
+	fn(r, m, c)
 }
 
 type Result map[string]string
@@ -60,25 +70,37 @@ type MsgHandler struct {
 	MatchHandler Handler
 }
 
-func (s *Service) Send(line string, message Message) error {
+type Communication struct {
+	ch chan<- Message
+}
+
+func (c *Communication) Send(line string, message Message) {
 	message.Payload = line
-	j, err := json.Marshal(message)
-	if err != nil {
-		return err
+	c.ch <- message
+}
+
+func (s *Service) responseReceiver() {
+	for {
+		message := <-s.responseCh
+		j, err := json.Marshal(message)
+		if err != nil {
+			continue
+		}
+		s.publish(string(j))
 	}
-	s.publish(string(j))
-	return nil
 }
 
 func (s *Service) publish(msg string) {
 	s.conn.out <- msg
 }
 
-var NoopHandler = MsgHandler{MatchHandler: HandlerFunc(func(r Result, m Message) {})}
+var NoopHandler = MsgHandler{MatchHandler: HandlerFunc(func(r Result, m Message, c Communication) {})}
 
 func NewService(config *Config) *Service {
 	s := &Service{
 		Config: config,
+
+		responseCh: make(chan Message, 1000),
 	}
 	// Add noop handler for default
 	s.DefaultHandle(NoopHandler)
@@ -89,6 +111,7 @@ func NewService(config *Config) *Service {
 func (s *Service) Handle(handler MsgHandler) {
 	// Choose one, sucker
 	if handler.DirectOnly && handler.PrivateOnly {
+		// TODO: handle this with an error
 		log.Panicln("Cannot have both DirectOnly and PrivateOnly set to true")
 	}
 	s.handlers = append(s.handlers, handler)
@@ -98,44 +121,44 @@ func (s *Service) DefaultHandle(handler MsgHandler) {
 	s.defaultHandler = handler
 }
 
-func (s *Service) findMatch(msg Message) {
+func (s *Service) registerCommunicationAndCallHandler(handler Handler, result Result, msg Message) {
+	com := Communication{s.responseCh}
+	go handler.HandleMatch(result, msg, com)
+}
+
+func (s *Service) findMsgMatch(msg Message) {
 	for _, mh := range s.handlers {
-		res, err := mh.MatcherFunc.Match(msg)
-		if IsNoMatch(err) {
+		res := mh.MatcherFunc.Match(msg)
+		if res == nil {
 			continue
 		} else {
-			mh.MatchHandler.HandleMatch(res, msg)
+			s.registerCommunicationAndCallHandler(mh.MatchHandler, res, msg)
 			return
 		}
 	}
-	s.defaultHandler.MatchHandler.HandleMatch(nil, msg)
+	s.registerCommunicationAndCallHandler(s.defaultHandler.MatchHandler, nil, msg)
 }
 
-func (s *Service) dispatch(rawmsg string) {
+func (s *Service) deserializeAndDispatch(rawmsg string) {
 	msg := Message{}
 	if err := json.Unmarshal([]byte(rawmsg), &msg); err != nil {
-		// ?
+		// We don't care about malformed messages, so we discard and return.
+		return
 	}
-	s.findMatch(msg)
+	s.findMsgMatch(msg)
 }
 
 func (s *Service) deligator() {
 	for {
 		select {
 		case msg := <-s.conn.in:
-			go s.dispatch(msg)
+			s.deserializeAndDispatch(msg)
 		}
 	}
 }
 
-// Runs forever or until a signal stops the program
+// Run runs forever or until a signal stops the program
 func (s *Service) Run() error {
-	sigch := make(chan os.Signal, 1)
-	go func() {
-		<-sigch
-		s.Cleanup()
-	}()
-
 	if s.Config.Service.SendAddr == "" {
 		s.Config.Service.SendAddr = DefaultSend
 	}
@@ -144,29 +167,35 @@ func (s *Service) Run() error {
 		s.Config.Service.RecvAddr = DefaultRecv
 	}
 
-	conn, err := NewConn(s.Config)
+	conn, err := NewConnection(s.Config)
 	if err != nil {
-		panic(err)
+		return errors.Wrap(err, "failed to create connection")
 	}
 	s.conn = conn
 	err = conn.start()
 	if err != nil {
-		panic(err)
+		return errors.Wrap(err, "failed to start connection")
 	}
 
+	go s.responseReceiver()
 	go s.deligator()
 
 	sigchn := make(chan os.Signal, 1)
 	signal.Notify(sigchn, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+
+LOOP:
 	for {
 		select {
 		case <-sigchn:
-			conn.close()
+			break LOOP
 		}
 	}
+
+	s.Cleanup()
 	return nil
 }
 
+// Cleanup will close open connections and clean up anything that shouldn't linger after shutdown.
 func (s *Service) Cleanup() {
 	s.conn.close()
 }

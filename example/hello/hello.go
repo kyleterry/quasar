@@ -32,7 +32,7 @@ func main() {
 			RecvAddr: "tcp://localhost:61123",
 		},
 	}
-	service := quasar.NewService(config)
+	service := quasar.New(config)
 	service.HelpText = HelpText
 	service.Description = Description
 

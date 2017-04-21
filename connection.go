@@ -1,7 +1,6 @@
 package quasar
 
 import (
-	"fmt"
 	"log"
 
 	zmq "github.com/pebbe/zmq4"
@@ -14,11 +13,11 @@ type pubsub struct {
 }
 
 type Connection struct {
-	in      <-chan string
-	out     chan<- string
-	pubsub  *pubsub
-	config  *Config
-	control chan interface{}
+	in     <-chan string
+	out    chan<- string
+	pubsub *pubsub
+	config *Config
+	ctrlCh chan interface{}
 }
 
 func NewConnection(conf *Config) (*Connection, error) {
@@ -48,7 +47,7 @@ func NewConnection(conf *Config) (*Connection, error) {
 }
 
 func (c *Connection) start() error {
-	c.control = make(chan interface{})
+	c.ctrlCh = make(chan interface{})
 	err := c.pubsub.sender.Connect(c.config.Service.SendAddr)
 	if err != nil {
 		return err
@@ -63,8 +62,7 @@ func (c *Connection) start() error {
 }
 
 func (c *Connection) close() {
-	close(c.control)
-	close(c.out)
+	close(c.ctrlCh)
 	c.pubsub.sender.Close()
 	c.pubsub.receiver.Close()
 	c.pubsub.ctx.Term()
@@ -77,7 +75,8 @@ func (c *Connection) send() chan<- string {
 			select {
 			case msg := <-chn:
 				c.publish(msg)
-			case <-c.control:
+			case <-c.ctrlCh:
+				close(chn)
 				return
 			}
 		}
@@ -96,12 +95,16 @@ func (c *Connection) recv() <-chan string {
 	chn := make(chan string, 1000)
 	go func() {
 		for {
-			for {
+			select {
+			case <-c.ctrlCh:
+				close(chn)
+				return
+			default:
 				msgs, err := c.pubsub.receiver.RecvMessage(0)
 				if err != nil {
-					fmt.Println(err)
 					continue
 				}
+
 				for _, msg := range msgs {
 					chn <- msg
 				}

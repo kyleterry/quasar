@@ -32,6 +32,7 @@ type Service struct {
 	handlers       []MsgHandler
 	conn           *Connection
 	responseCh     chan Message
+	ctrlCh         chan struct{}
 }
 
 // Matcher is an interface that has a match method that receives a
@@ -96,11 +97,12 @@ func (s *Service) publish(msg string) {
 
 var NoopHandler = MsgHandler{MatchHandler: HandlerFunc(func(r Result, m Message, c Communication) {})}
 
-func NewService(config *Config) *Service {
+func New(config *Config) *Service {
 	s := &Service{
 		Config: config,
 
 		responseCh: make(chan Message, 1000),
+		ctrlCh:     make(chan struct{}),
 	}
 	// Add noop handler for default
 	s.DefaultHandle(NoopHandler)
@@ -153,6 +155,8 @@ func (s *Service) deligator() {
 		select {
 		case msg := <-s.conn.in:
 			s.deserializeAndDispatch(msg)
+		case <-s.ctrlCh:
+			return
 		}
 	}
 }
@@ -197,5 +201,6 @@ LOOP:
 
 // Cleanup will close open connections and clean up anything that shouldn't linger after shutdown.
 func (s *Service) Cleanup() {
+	close(s.ctrlCh)
 	s.conn.close()
 }

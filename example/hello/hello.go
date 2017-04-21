@@ -7,9 +7,7 @@ import (
 	"github.com/kyleterry/quasar"
 )
 
-const HelpText = `This is help text
-You can add information on how to use the service so tenyks can tell people
-how it should be used`
+const HelpText = `Use this to convey what the service does during a help query`
 
 const Description = "Says hello and ping back to a user"
 
@@ -24,6 +22,7 @@ func matchHello(msg quasar.Message) quasar.Result {
 var matchName = quasar.NewRegexMatcher("^my name is (?P<name>(.*))$")
 
 func main() {
+	// Start by creating a configuration object to pass into the service when it's created.
 	config := &quasar.Config{
 		Name:    "hello",
 		Version: "1.0",
@@ -32,10 +31,12 @@ func main() {
 			RecvAddr: "tcp://localhost:61123",
 		},
 	}
+
 	service := quasar.New(config)
 	service.HelpText = HelpText
 	service.Description = Description
 
+	// Handle tables a MsgHandler that will try to match incoming messages against anything you define.
 	service.Handle(
 		quasar.MsgHandler{
 			MatcherFunc: quasar.MatcherFunc(matchHello),
@@ -44,6 +45,8 @@ func main() {
 				log.Print("Hello handler called")
 				com.Send(fmt.Sprintf("Hello, %s!", msg.Nick), msg)
 			}),
+			// This is a handler level help text. You can use it to document a handler for !help queries.
+			HelpText: "hello - tenyks will respond with a hello back",
 		},
 	)
 
@@ -54,12 +57,14 @@ func main() {
 			MatchHandler: quasar.HandlerFunc(func(match quasar.Result, msg quasar.Message, com quasar.Communication) {
 				log.Print("Name handler called")
 				if name, ok := match["name"]; ok {
-					com.Send(fmt.Sprintf("hello, %s!", name), msg)
+					com.Send(fmt.Sprintf("nice to meet you, %s!", name), msg)
 				}
 			}),
+			HelpText: "my name is <name> - tenyks will respond with a personal greeting back",
 		},
 	)
 
+	// You can set a default handler. This is handler is called if nothing matches an incoming message.
 	service.DefaultHandle(
 		quasar.MsgHandler{
 			DirectOnly: true,
@@ -68,6 +73,7 @@ func main() {
 				log.Print("Default handler called")
 				com.Send(fmt.Sprintf("you rang, %s?", msg.Nick), msg)
 			})),
+			HelpText: "if nothing matches, tenyks will respond to any message asking if you rang",
 		},
 	)
 

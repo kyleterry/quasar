@@ -69,6 +69,7 @@ type MsgHandler struct {
 	DirectOnly   bool
 	PrivateOnly  bool
 	MatchHandler Handler
+	HelpText     string
 }
 
 type Communication struct {
@@ -161,7 +162,8 @@ func (s *Service) deligator() {
 	}
 }
 
-// Run runs forever or until a signal stops the program
+// Run runs forever or until a signal stops the program.
+// This function blocks.
 func (s *Service) Run() error {
 	if s.Config.Service.SendAddr == "" {
 		s.Config.Service.SendAddr = DefaultSend
@@ -187,11 +189,14 @@ func (s *Service) Run() error {
 	sigchn := make(chan os.Signal, 1)
 	signal.Notify(sigchn, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
-LOOP:
+	// should consider removing this and just letting the person implementing
+	// the service be responsible for capturing signals and exiting. that would
+	// also enable this function to be safely ran in a goroutine.
+Loop:
 	for {
 		select {
 		case <-sigchn:
-			break LOOP
+			break Loop
 		}
 	}
 
